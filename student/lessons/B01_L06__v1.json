@@ -1,0 +1,113 @@
+{
+  "schema": "vocab-research-1",
+  "id": "B01_L06",
+  "version": "v1",
+  "title": "第一冊 第六課：他們學校在山上",
+  "book": "第一冊",
+  "lesson": "第六課：他們學校在山上",
+  "appVersion": "0.3.7",
+  "quizMode": "practice",
+  "availableAt": null,
+  "gasUrl": "",
+  "availableLanguages": [
+    "en"
+  ],
+  "words": [
+    {
+      "id": "W3005CDB142",
+      "word": "聽說",
+      "pinyin": "tīng shuō",
+      "meaning": "",
+      "meanings": {
+        "en": "to hear that; be told that",
+        "vi": "nghe nói",
+        "id": "dengar-dengar; katanya"
+      },
+      "sentence": "＿＿怡君的學校很漂亮。",
+      "category": "textbook",
+      "accepted": [],
+      "source": "對話1"
+    },
+    {
+      "id": "W3F52B57ED8",
+      "word": "花蓮",
+      "pinyin": "huā lián",
+      "meaning": "",
+      "meanings": {
+        "en": "Hualien (place name, Taiwan)",
+        "vi": "Hoa Liên (địa danh Đài Loan)",
+        "id": "Hualien (nama tempat di Taiwan)"
+      },
+      "sentence": "他們學校在＿＿的山上。",
+      "category": "textbook",
+      "accepted": [],
+      "source": "對話1"
+    },
+    {
+      "id": "W6CCFB44B97",
+      "word": "風景",
+      "pinyin": "fēng jǐng",
+      "meaning": "",
+      "meanings": {
+        "en": "scenery; landscape",
+        "vi": "phong cảnh",
+        "id": "pemandangan"
+      },
+      "sentence": "那裡的＿＿一定很美。",
+      "category": "textbook",
+      "accepted": [],
+      "source": "對話1"
+    },
+    {
+      "id": "WAD0A0ABEAB",
+      "word": "前面",
+      "pinyin": "qián miàn",
+      "meaning": "",
+      "meanings": {
+        "en": "in front of; the front",
+        "vi": "phía trước",
+        "id": "di depan"
+      },
+      "sentence": "＿＿這棟大樓很漂亮。",
+      "category": "textbook",
+      "accepted": [],
+      "source": "對話1"
+    },
+    {
+      "id": "W0AC6D5192E",
+      "word": "海",
+      "pinyin": "hǎi",
+      "meaning": "",
+      "meanings": {
+        "en": "sea",
+        "vi": "biển",
+        "id": "laut"
+      },
+      "sentence": "是的，他們學校前面有＿＿，後面有山，那裡真的是一個很漂亮的地方。",
+      "category": "textbook",
+      "accepted": [],
+      "source": "對話1"
+    },
+    {
+      "id": "W193E6EF53D",
+      "word": "越南",
+      "pinyin": "",
+      "meaning": "",
+      "meanings": {
+        "en": "Vietnam",
+        "vi": "",
+        "id": ""
+      },
+      "sentence": "Vietnam is ＿＿。",
+      "category": "supplemental",
+      "accepted": [],
+      "source": "教師補充"
+    }
+  ],
+  "sourceTexts": {
+    "對話1": "安同：聽說怡君的學校很漂亮。\n如玉：他們學校在哪裡？遠不遠？\n安同：有一點遠。他們學校在花蓮的山上。\n如玉：山上？那裡的風景一定很美。\n安同：是的，他們學校前面有海，後面有山，那裡真的是一個很漂亮的地方。\n如玉：我想去看看。我們這個週末一起去吧！\n安同：好啊！我現在要去學校附近的咖啡店買咖啡。妳呢？\n如玉：我去樓下找朋友，我們要一起去上課。",
+    "對話2": "怡君：歡迎你們來。\n安同：你們學校真遠！\n怡君：是啊，不是很近，有一點不方便。\n如玉：這裡的學生在哪裡買東西？\n怡君：在學校外面。學校裡面沒有商店。\n安同：吃飯呢？學校裡面有沒有餐廳？\n怡君：有，餐廳在學生宿舍的一樓。\n安同：前面這棟大樓很漂亮。\n怡君：這是圖書館，旁邊的那棟大樓是教室，圖書館後面有游泳池。",
+    "文章1": "",
+    "文章2": ""
+  }
+}
