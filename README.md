@@ -60,15 +60,19 @@ GAS 的 Google Sheets 資料及舊版瀏覽器佇列保留原處。若正式收�
 
 ## 教師試用前自動化驗收
 
-在安裝 Python 與 Node 相依套件的開發工作目錄執行
-`./tests/run-acceptance.ps1`，可重跑教師 AppTest、本機 PostgreSQL 和 Chrome
-三階段預覽。教師測試使用合成冊課及臨時草稿，表格欄位以 Streamlit 的
-WidgetState 格式提交。
+在安裝 Python 與 Node 相依套件的開發工作目錄執行下列指令：
 
-帶上 `-Cloud -Cli <Supabase CLI 路徑>` 會另外使用已授權的 GitHub 與 Supabase
-登入，建立隔離的 `codex/vocab-accept-it-*` 分支與合成資料。Chrome 從該分支
-實際提交的教材開始，之後只讀核對教師畫面及雲端事件。測試不提交正式教材，
-也不合併 `main`。本流程會留下可追查的合成測試分支與資料。
+| 指令 | 驗證範圍 |
+| --- | --- |
+| `./tests/run-acceptance.ps1 -Mode Local` | 教師 AppTest 與本機 PostgreSQL，不需外部服務或瀏覽器 |
+| `./tests/run-acceptance.ps1 -Mode Browser` | 自動產生合成預覽並以 Chrome 操作三階段 |
+| `./tests/run-acceptance.ps1 -Mode Cloud -Cli <CLI 路徑>` | 已授權的 GitHub／Supabase 合成資料整合，含 Chrome 學生端 |
+| `./tests/run-acceptance.ps1 -Mode All -Cli <CLI 路徑>` | 全部驗收 |
+
+無參數時執行本機與 Chrome 預覽，`-Cloud` 相容於原本的全套驗收。
+教師 AppTest 使用合成冊課與臨時草稿，以 Streamlit WidgetState 提交表格欄位。
+雲端模式建立隔離的 `codex/vocab-accept-it-*` 分支與合成資料，Chrome 使用該分支
+實際提交的教材，並唯讀核對教師畫面與雲端事件。測試會保留合成分支與資料供追查。
 
 配對與填空依教師選入的詞彙、完整的詞義語言、題句與審核的備選答案運作。
 階段次序和全對門檻依既有研究規則固定。

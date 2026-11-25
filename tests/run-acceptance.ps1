@@ -1,12 +1,25 @@
 [CmdletBinding()]
 param(
     [switch] $Cloud,
+    [ValidateSet('Local','Browser','Cloud','Offline','All')]
+    [string] $Mode='Offline',
     [string] $Cli='supabase',
     [string] $Chrome=(Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe')
 )
 $ErrorActionPreference='Stop'
+if($Cloud){
+    if($PSBoundParameters.ContainsKey('Mode')){throw 'Use either -Cloud or -Mode, not both'}
+    $Mode='All'
+}
+$runLocal=$Mode -in 'Local','Offline','All'
+$runBrowser=$Mode -in 'Browser','Offline','All'
+$runCloud=$Mode -in 'Cloud','All'
+if(($runBrowser -or $runCloud) -and !(Test-Path -LiteralPath $Chrome -PathType Leaf)){
+    throw 'Chrome executable not found for browser tests. Specify -Chrome or use -Mode Local.'
+}
 $repo=Split-Path -Parent $PSScriptRoot
 $ref='pznehaenpfadyjdqgpyh'
+$previousPreview=$env:VOCAB_PREVIEW_HTML
 $preview=Join-Path ([IO.Path]::GetTempPath()) ("vocab-preview-"+[guid]::NewGuid()+".html")
 
 function Check-Exit($stage) {
@@ -16,13 +29,28 @@ function Check-Exit($stage) {
 Push-Location -LiteralPath $repo
 try {
     $env:PYTHONIOENCODING='utf-8'
-    $env:VOCAB_PREVIEW_HTML=$preview
-    $env:VOCAB_E2E_CHROME=$Chrome
-    python -B tests/teacher_acceptance.py
-    Check-Exit 'Teacher GUI acceptance'
-    node --test tests/preview-browser.test.mjs tests/supabase.test.mjs
-    Check-Exit 'Preview and local database tests'
-    if(!$Cloud){return}
+    if($runBrowser){
+        $env:VOCAB_PREVIEW_HTML=$preview
+    } else {
+        Remove-Item Env:VOCAB_PREVIEW_HTML -ErrorAction SilentlyContinue
+    }
+    if($runBrowser -or $runCloud){
+        $env:VOCAB_E2E_CHROME=$Chrome
+    }
+    if($runLocal){
+        python -B tests/teacher_acceptance.py
+        Check-Exit 'Teacher GUI acceptance'
+        node --test tests/supabase.test.mjs
+        Check-Exit 'Local database tests'
+    } elseif($runBrowser){
+        python -B tests/teacher_acceptance.py TeacherAcceptance.test_07_reopen_saved_version_and_restore_preview
+        Check-Exit 'Generate teacher preview fixture'
+    }
+    if($runBrowser){
+        node --test tests/preview-browser.test.mjs
+        Check-Exit 'Chrome preview'
+    }
+    if(!$runCloud){return}
 
     $origin=git remote get-url origin
     Check-Exit 'Read GitHub origin'
@@ -74,6 +102,11 @@ try {
 } finally {
     Pop-Location
     if(Test-Path -LiteralPath $preview){Remove-Item -LiteralPath $preview}
+    if($null -eq $previousPreview){
+        Remove-Item Env:VOCAB_PREVIEW_HTML -ErrorAction SilentlyContinue
+    } else {
+        $env:VOCAB_PREVIEW_HTML=$previousPreview
+    }
     if($generatedTestIdentity){
         foreach($var in @('VOCAB_E2E_PIN','VOCAB_E2E_PIN2')){
             Remove-Item "Env:$var" -ErrorAction SilentlyContinue
