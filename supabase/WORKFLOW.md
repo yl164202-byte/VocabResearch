@@ -38,3 +38,8 @@ supabase migration list --remote=pznehaenpfadyjdqgpyh
 Confirm the version appears in both columns. Use a new incremental migration
 for future changes. Keep credentials in CLI credential storage or the
 authorized process environment.
+
+The audit reads history through the Management API. If the migration repair
+command reports that direct IPv6 connectivity is unavailable, use Supabase's
+approved IPv4 connection pooler or an authenticated Management API workflow.
+Keep the baseline pending until the connection works and equivalence is verified.
