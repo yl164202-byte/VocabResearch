@@ -43,3 +43,12 @@ The audit reads history through the Management API. If the migration repair
 command reports that direct IPv6 connectivity is unavailable, use Supabase's
 approved IPv4 connection pooler or an authenticated Management API workflow.
 Keep the baseline pending until the connection works and equivalence is verified.
+
+## Baseline reconciliation result
+
+On 2026-11-25 (Asia/Taipei), 53 catalog records matched between the
+deployed project and the local baseline, including routines, constraints,
+table permissions, RLS, extensions and indexes. PostgreSQL version-specific
+standalone NOT NULL records were compared through column nullability.
+The CLI marked `202611250001` as applied without executing its SQL again.
+A subsequent `migration list` showed the same version both locally and remotely.

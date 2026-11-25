@@ -1,0 +1,12 @@
+{
+  "name": "vocabresearch-backend-tests",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/supabase.test.mjs",
+    "test:cloud-browser": "node --test tests/cloud-browser.test.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.6.0",
+    "playwright-core": "1.65.1"
+  }
+}
