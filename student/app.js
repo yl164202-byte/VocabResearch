@@ -300,11 +300,12 @@ function cloze(){if(!clozeStarted)clozeStarted=Date.now();if(!clozeOrder.length)
   const scores=[];
   for(const {word,value,inputMethod} of entries){
    const correct=grades?grades[word.id]:classifyCloze(word,value,lesson.words).correct;
+   const isTargetWord=norm(word.word)===norm(value);
    const actual=correct?lesson.words.find(w=>norm(w.word)===norm(value)):null;
    scores.push(correct);
    if(!correct)clozeErrors[word.id]=(clozeErrors[word.id]||0)+1;
    makeEvent('answer',{wordId:word.id,word:word.word,selected:value,correct,
-    actualWordId:actual?.id??null,actualWord:actual?.word??null,questionType:'context_cloze',submissionId,
+    actualWordId:actual?.id??null,actualWord:actual?.word??null,isTargetWord,questionType:'context_cloze',submissionId,
     attempt:round||1,wordAttempt:round||1,firstAttempt:(round||1)===1,
     wordErrorCount:clozeErrors[word.id]||0,elapsedClozeRoundMs:Date.now()-clozeStarted,inputMethod});
   }
