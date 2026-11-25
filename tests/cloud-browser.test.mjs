@@ -53,10 +53,14 @@ test('live Supabase HTTP and local Chrome against a synthetic course', { timeout
     res.writeHead(200,{'Content-Type':asset[0]+'; charset=utf-8','Cache-Control':'no-store'}).end(asset[1]);
   });
   await new Promise((resolve,reject)=>server.listen(0,'127.0.0.1',resolve).once('error',reject));
-  t.after(()=>new Promise(resolve=>server.close(resolve)));
+  let browser;
+  t.after(async()=>{
+    try{await browser?.close()}finally{
+      await new Promise(resolve=>{server.close(resolve);server.closeAllConnections()});
+    }
+  });
   const url='http://127.0.0.1:'+server.address().port+'/index.html';
-  const browser=await chromium.launch({executablePath,headless:true,args:['--disable-background-networking']});
-  t.after(()=>browser.close());
+  browser=await chromium.launch({executablePath,headless:true,args:['--disable-background-networking']});
   const context=await browser.newContext();
   const first=await context.newPage();
   const second=await context.newPage();
@@ -158,15 +162,15 @@ test('live Supabase HTTP and local Chrome against a synthetic course', { timeout
   await t.test('cloze preserves offline text, then accepts retry and a reviewed alternate answer',async()=>{
     const input=(word)=>first.locator('[data-fill="'+word.id+'"]');
     await input(words[0]).fill('錯誤');
-    for(const word of words.slice(1)) await input(word).fill(word.word);
+    for(const word of words.slice(1)) await input(word).fill('  '+word.word+'。  ');
     await first.click('#submitCloze');
     await first.getByText(/判分未完成/).waitFor();
     assert.equal(await input(words[0]).inputValue(),'錯誤');
     await first.click('#submitCloze');
     await first.getByText(/尚未全對/).waitFor();
     await first.click('#submitCloze');
-    await input(words[0]).fill('第一');
-    for(const word of words.slice(1)) await input(word).fill(word.word);
+    await input(words[0]).fill('  先修詞。  ');
+    for(const word of words.slice(1)) await input(word).fill('  '+word.word+'。  ');
     await first.click('#submitCloze');
     await sync(first,'Supabase 已確認並鎖定');
   });

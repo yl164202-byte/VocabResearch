@@ -81,6 +81,8 @@ test('only the active session can receive alias grades and no answer key is retu
   assert.deepEqual(wrong.grades,{W1:false,W2:true});
   const right=await request('grade_cloze',{sessionId:ids.L1,answers:{W1:'第一。',W2:'乙'}});
   assert.deepEqual(right.grades,{W1:true,W2:true});
+  const canonical=await request('grade_cloze',{sessionId:ids.L1,answers:{W1:'甲',W2:'乙'}});
+  assert.deepEqual(canonical.grades,right.grades);
   assert.equal(JSON.stringify(right).includes('第一'),false);
   assert.equal((await request('grade_cloze',{sessionId:ids.L1,answers:{W1:'第一'}})).error,'invalid_answers');
   assert.equal((await request('grade_cloze',{studentCode:'S002',pin:'fixture-only-2',sessionId:ids.L1,

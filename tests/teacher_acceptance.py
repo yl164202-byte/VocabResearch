@@ -177,6 +177,31 @@ class TeacherAcceptance(unittest.TestCase):
             self.gui.text_input(key='sb_projectUrl').set_value('https://another.supabase.co').run()
             self.assertNotIn('research_rows',self.gui.session_state)
 
+    def test_12_edit_other_accepted_answers_and_restore_draft(self):
+        label='其他可接受答案（選填）'
+
+        def edit(at, value):
+            next(t for t in at.text_area if t.label==label).set_value(value)
+            button(at,'套用本題其他答案').click().run()
+            check(at)
+
+        edit(self.gui,'舊課詞\n任意手輸')
+        self.assertEqual(self.gui.dataframe[0].value.iloc[0]['其他答案'],'舊課詞、任意手輸')
+        self.save()
+        reopened=self.open(self.gui.query_params)
+        self.assertEqual(next(t.value for t in reopened.text_area if t.label==label),'舊課詞\n任意手輸')
+        edit(reopened,'舊課詞、已修改')
+        button(reopened,'儲存整課修改').click().run()
+        reopened=self.open(reopened.query_params)
+        self.assertEqual(reopened.dataframe[0].value.iloc[0]['其他答案'],'舊課詞、已修改')
+        edit(reopened,'')
+        button(reopened,'儲存整課修改').click().run()
+        reopened=self.open(reopened.query_params)
+        self.assertEqual(reopened.dataframe[0].value.iloc[0]['其他答案'],'')
+        row=reopened.session_state['rows'][0]
+        self.assertEqual(row['word'],'甲')
+        self.assertEqual(row['sentence'],'這是＿＿的例子。')
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)

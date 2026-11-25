@@ -56,6 +56,15 @@ def valid_blank(sentence):
 def stable_word_id(word):
     return 'W'+hashlib.sha256(word.encode('utf-8')).hexdigest()[:10].upper()
 
+def accepted_answers(value):
+    # Drafts store a string, while imported rows may already contain a list.
+    if isinstance(value, str):
+        value = re.split(r'[,，;；、\n]', value)
+    if not isinstance(value, list):
+        return []
+    return [answer.strip() for answer in value if isinstance(answer, str) and answer.strip()]
+
+
 def validate_and_build(book,lesson,rows,meta,preview=False):
     problems=[]; selected=[r for r in rows if r.get("included",True)]
     if not selected:problems.append('請至少勾選一個納入練習的生詞')
@@ -64,7 +73,7 @@ def validate_and_build(book,lesson,rows,meta,preview=False):
     if not re.fullmatch(r'[A-Za-z0-9_.-]{1,90}',version):problems.append('版本格式錯誤')
     words=[]; seen=set(); meanings_by_lang={lang:{} for lang in ('en','vi','id')}
     for row in selected:
-        w=str(row.get('word') or '').strip(); meaning=str(row.get('meaning') or '').strip(); sentence=normalize_blank(row.get('sentence')); accepted=str(row.get('accepted') or '').strip()
+        w=str(row.get('word') or '').strip(); meaning=str(row.get('meaning') or '').strip(); sentence=normalize_blank(row.get('sentence'))
         if not w:problems.append('出現空白生詞');continue
         if w in seen:problems.append(f'重複生詞：{w}')
         seen.add(w)
@@ -80,7 +89,7 @@ def validate_and_build(book,lesson,rows,meta,preview=False):
             elif val: meanings_by_lang[lang][norm_val]=w
         if not valid_blank(sentence):problems.append(f'「{w}」填空句必須包含且僅包含一個「＿＿」')
         if w in sentence:problems.append(f'「{w}」填空句仍包含目標生詞，可能洩漏答案')
-        aliases=[v.strip() for v in re.split(r'[,，;；、\n]',accepted) if v.strip()]
+        aliases=accepted_answers(row.get('accepted'))
         words.append({'id':stable_word_id(w),'word':w,'pinyin':str(row.get('pinyin') or '').strip(),'meaning':meaning,'meanings':ml,'sentence':sentence,'category':str(row.get('category') or 'textbook'),'accepted':aliases,'source':str(row.get('sources') or '')})
     # 逐種語言檢查整組配對的完整性；只有全課均有詞義的語言才供學生選擇。
     available_langs=[lang for lang in ('en','vi','id') if all(w['meanings'][lang] for w in words)]

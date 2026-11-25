@@ -103,6 +103,17 @@ def run_cloud():
             button(at,'建立學生').click().run()
             check(at)
             assert any(x.value.startswith('已建立學生') for x in at.success)
+        label='其他可接受答案（選填）'
+        next(t for t in at.text_area if t.label==label).set_value('第一、先修詞')
+        button(at,'套用本題其他答案').click().run()
+        check(at)
+        if os.getenv('VOCAB_E2E_MULTIPLE'):
+            at.selectbox(key='alias_word_1_1').select('乙').run()
+            next(t for t in at.text_area if t.label==label).set_value('')
+            button(at,'套用本題其他答案').click().run()
+            check(at)
+        button(at,'儲存整課修改').click().run()
+        check(at)
         at.checkbox(key='publish_confirm').check()
         for version in ('v1','v2','v2'):
             at.text_input(key='course_version').set_value(version)
@@ -113,6 +124,15 @@ def run_cloud():
         button(at,'查詢 Supabase 課程版本').click().run()
         check(at)
         assert set(at.dataframe[-1].value['version'])=={'v1','v2'}
+        from teacher_backend import TeacherBackend, value
+        course=value(os.environ['VOCAB_E2E_COURSE'])
+        documents=TeacherBackend(os.environ['VOCAB_E2E_URL']).query(
+            f"select version, document->'words' as words from vocab_private.courses where id=({course} #>> '{{}}')")
+        assert len(documents)==2
+        for row in documents:
+            assert row['words'][0]['accepted']==['第一','先修詞']
+            if os.getenv('VOCAB_E2E_MULTIPLE'):
+                assert row['words'][1]['accepted']==[]
         button(at,'測試連線與讀取課程清單').click().run()
         check(at)
         lesson_file=os.environ['VOCAB_E2E_COURSE']+'__v1.json'
@@ -122,7 +142,7 @@ def run_cloud():
         at.button(key='visibility_'+lesson_file).click().run()
         check(at)
         assert lesson_file not in at.session_state['github_check']['hidden']
-        print('Live Streamlit settings, two students, two immutable publications, safe retry and visibility passed')
+        print('Live Streamlit settings, two students, two immutable publications, private aliases and cleared alternatives, safe retry and visibility passed')
 
 
 def run_status():
@@ -164,8 +184,16 @@ def run_status():
             assert [int(e['attempt']) for e in (failed,succeeded)]==[1,2]
             assert [e['extra_json']['wordErrorCount'] for e in (failed,succeeded)]==[1,1]
             if stage=='cloze':
-                assert succeeded['selected']=='第一'
+                assert succeeded['selected']=='  先修詞。  '
+                assert succeeded['extra_json']['isTargetWord'] is False
+                assert succeeded['extra_json']['actualWordId'] is None
                 assert failed['extra_json']['submissionId']!=succeeded['extra_json']['submissionId']
+        if os.getenv('VOCAB_E2E_MULTIPLE'):
+            targets=[e for e in answers if e['stage']=='cloze' and e['word_id']==stable_word_id('乙')]
+            assert len(targets)==2
+            assert all(e['correct_server'] and e['selected']=='  乙。  '
+                       and e['extra_json']['isTargetWord'] is True
+                       and e['extra_json']['actualWordId']==stable_word_id('乙') for e in targets)
         assert sum(e['correct_server'] is False for e in one)==int(first['incorrect_answers'])
         print('Live teacher GUI reports completed and incomplete students, with exact cloud event IDs, attempts, errors and isolated sessions')
 

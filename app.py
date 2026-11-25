@@ -1,7 +1,7 @@
 import os,json,datetime,re
 from pathlib import Path
 import streamlit as st
-from core import load_book,lesson_key,unique_words,sentence_candidates,validate_and_build,make_public_export,TEXT_PARTS,normalize_blank,valid_blank,APP_VERSION,BACKEND_PROTOCOL
+from core import load_book,lesson_key,unique_words,sentence_candidates,validate_and_build,make_public_export,TEXT_PARTS,normalize_blank,valid_blank,APP_VERSION,BACKEND_PROTOCOL,accepted_answers,stable_word_id
 from github_publish import publish, status as github_status, set_visibility, update_student_site, SITE, BRANCH, branch_path
 import credential_store
 from teacher_backend import TeacherBackend, public_config, coordinated_publish
@@ -203,7 +203,7 @@ def table_record(row):
             '英文':str((row.get('meanings') or {}).get('en') or ''),
             '越南文':str((row.get('meanings') or {}).get('vi') or ''),
             '印尼文':str((row.get('meanings') or {}).get('id') or ''),
-            '填空句':str(row.get('sentence') or ''),'其他答案':str(row.get('accepted') or ''),
+            '填空句':str(row.get('sentence') or ''),'其他答案':'、'.join(accepted_answers(row.get('accepted'))),
             '來源':'補充' if row.get('category')=='supplemental' else row.get('sources','教材'),
             '檢查':row_issues(row)}
 
@@ -267,7 +267,7 @@ with tab_words:
                 '越南文':st.column_config.TextColumn('越南文',width='medium'),
                 '印尼文':st.column_config.TextColumn('印尼文',width='medium'),
                 '填空句':st.column_config.TextColumn('填空句（＿＿）',width='large'),
-                '其他答案':st.column_config.TextColumn('認可的其他答案（同課生詞可填，使用頓號分隔）',width='small'),
+                '其他答案':st.column_config.TextColumn('其他可接受答案（選填）',help='可手動輸入當課或先前學過的詞。多個答案用頓號分隔。',width='medium'),
                 '來源':st.column_config.TextColumn('來源',width='small'),
                 '檢查':st.column_config.TextColumn('初始檢查',width='medium')})
             by_word={r['word']:r for r in selected_rows}
@@ -280,6 +280,27 @@ with tab_words:
                 row['sentence']=normalize_blank(entry.get('填空句'))
                 row['accepted']=entry.get('其他答案') or ''
         else: st.success('目前沒有空白或格式問題。')
+        with st.expander('逐題編輯：其他可接受答案'):
+            target=st.selectbox('填空題的目標生詞',[row['word'] for row in selected_rows],key='alias_word_'+key_hash)
+            prompt=next(row for row in selected_rows if row['word']==target)
+            aliases=accepted_answers(prompt.get('accepted'))
+            st.write('本題填空句',prompt.get('sentence') or '尚未填寫')
+            st.write('預設正確答案',target)
+            st.write('目前的其他可接受答案','、'.join(aliases) or '未設定')
+            form_key='alias_form_'+key_hash
+            editor_key='aliases_'+key_hash+'_'+stable_word_id(target+'\0'+'\n'.join(aliases))
+            def apply_aliases(row, widget_key):
+                row['accepted']='、'.join(accepted_answers(st.session_state[widget_key]))
+                st.session_state['table_revision']+=1
+                st.session_state['alias_notice']=key
+
+            with st.form(form_key):
+                st.text_area('其他可接受答案（選填）',value='\n'.join(aliases),key=editor_key,
+                    help='可手動輸入當課或先前學過的詞，每行一個或以頓號分隔。刪除文字即可移除答案。')
+                st.form_submit_button('套用本題其他答案',on_click=apply_aliases,args=(prompt,editor_key))
+            if st.session_state.get('alias_notice')==key:
+                st.session_state.pop('alias_notice')
+                st.success('已套用，可儲存整課草稿或發布教材。')
         if st.button('儲存整課修改',type='primary',key='save_whole_'+key_hash):
             try: st.success('已儲存：'+save_current_draft())
             except (OSError,ValueError) as ex: st.error('儲存失敗：'+str(ex))
