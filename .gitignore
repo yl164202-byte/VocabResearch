@@ -38,3 +38,6 @@ venv/
 student/backend.json
 node_modules/
 /supabase/.temp/
+
+teacher_supabase_settings.json
+*_SUPABASE_PRIVATE*

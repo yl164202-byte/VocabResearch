@@ -275,4 +275,45 @@ let clozeOrder=[];
 function cloze(){if(!clozeStarted)clozeStarted=Date.now();if(!clozeOrder.length)clozeOrder=shuffled(lesson.words);saveSnapshot();$('screen').innerHTML=`<h2>${testing?'延宕測驗':'無選項句子填空'}｜第 ${round||1} 輪</h2><p class="hint">直接打字或使用裝置鍵盤語音輸入。可按麥克風執行瀏覽器語音辨識（若支援）。</p>`+clozeOrder.map(x=>`<div class="item"><label>${h(x.sentence)}</label><div class="row"><div class="grow"><input data-fill="${h(x.id)}" autocomplete="off" placeholder="輸入生詞"></div><button class="secondary" data-mic="${h(x.id)}">🎤 語音</button></div><div class="small" data-inputmethod="${h(x.id)}">目前：打字／鍵盤輸入</div></div>`).join('')+`<button id="submitCloze">${testing?'送出正式測驗':'送出本輪填空'}</button>`;
  const methods={};$('screen').querySelectorAll('[data-mic]').forEach(btn=>btn.onclick=()=>{let id=btn.dataset.mic,R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R){msg('本瀏覽器不支援語音辨識，請改用打字。','bad');return}const screen=$('screen').querySelector('[data-fill="'+id+'"]');let rec=new R();rec.lang='zh-TW';rec.interimResults=false;rec.maxAlternatives=1;rec.onresult=e=>{if(!screen?.isConnected||dailySyncing)return;let t=e.results[0][0].transcript;$('screen').querySelector(`[data-fill="${id}"]`).value=t;methods[id]='speech';$('screen').querySelector(`[data-inputmethod="${id}"]`).textContent='語音辨識完成，請核對或修正文字';makeEvent('speech_transcript',{wordId:id,transcript:t});saveSnapshot()};rec.onerror=e=>{if(screen?.isConnected&&!dailySyncing)makeEvent('speech_error',{wordId:id,error:e.error})};rec.start()});
  $('screen').querySelectorAll('[data-fill]').forEach(inp=>inp.addEventListener('input',()=>{if(methods[inp.dataset.fill]==='speech')methods[inp.dataset.fill]='speech_edited';saveSnapshot()}));
- $('submitCloze').onclick=()=>{if(clozeOrder.some(x=>!norm($('screen').querySelector(`[data-fill="${x.id}"]`).value)))return msg('請填寫所有空格','bad');const submissionId=uuid();let res=[];for(const x of clozeOrder){let inp=$('screen').querySelector(`[data-fill="${x.id}"]`),ans=inp.value.trim().replace(/[\s，。！？,.!?]/g,''),judgement=classifyCloze(x,inp.value,lesson.words),correct=judgement.correct;if(!ans)return msg('請填寫所有空格','bad');res.push(correct);makeEvent('answer',{wordId:x.id,word:x.word,selected:inp.value,correct,actualWordId:judgement.actualWordId,actualWord:judgement.actualWord,questionType:'context_cloze',submissionId,attempt:round||1,wordAttempt:round||1,firstAttempt:(round||1)===1,elapsedClozeRoundMs:Date.now()-clozeStarted,inputMethod:methods[x.id]||'typed'})}makeEvent('round_end',{submissionId,correctCount:res.filter(Boolean).length,total:res.length});if(testing){makeEvent('assessment_submitted',{correctCount:res.filter(Boolean).length,total:res.length});completed=true;render();return}if(res.every(Boolean)){makeEvent('stage_pass',{passedStage:'cloze',submissionId});makeEvent('session_complete',{submissionId});completed=true;saveSnapshot();render();flush()}else{let n=res.filter(Boolean).length;msg(`本輪 ${n}/${res.length}，尚未全對，請繼續練習。`,'bad');round++;saveSnapshot();$('submitCloze').textContent='重新填空';$('submitCloze').onclick=()=>{clozeStarted=Date.now();cloze()}}}}
+ const submit=$('submitCloze');
+ submit.onclick=async()=>{
+  const entries=clozeOrder.map(word=>({word,value:$('screen').querySelector(`[data-fill="${word.id}"]`).value,
+   inputMethod:methods[word.id]||'typed'}));
+  if(entries.some(x=>!norm(x.value)))return msg('請填寫所有空格','bad');
+  const scope=sessionId, submissionId=uuid();
+  let grades=null;
+  if(!preview&&lesson.clozeGrading==='server'){
+   submit.disabled=true;
+   try{
+    const result=await controlRequest({lesson,student,pin},'grade_cloze',{sessionId,
+     answers:Object.fromEntries(entries.map(x=>[x.word.id,x.value]))});
+    grades=result.grades;
+    if(!grades||entries.some(x=>typeof grades[x.word.id]!=='boolean'))throw Error('缺少完整判分');
+   }catch(e){
+    if(submit.isConnected)msg('判分未完成，答案仍保留。請確認網路後重送。','bad');
+    return;
+   }finally{submit.disabled=false}
+   if(!submit.isConnected||sessionId!==scope||dailySyncing)return;
+  }
+  const scores=[];
+  for(const {word,value,inputMethod} of entries){
+   const correct=grades?grades[word.id]:classifyCloze(word,value,lesson.words).correct;
+   const actual=correct?lesson.words.find(w=>norm(w.word)===norm(value)):null;
+   scores.push(correct);
+   makeEvent('answer',{wordId:word.id,word:word.word,selected:value,correct,
+    actualWordId:actual?.id??null,actualWord:actual?.word??null,questionType:'context_cloze',submissionId,
+    attempt:round||1,wordAttempt:round||1,firstAttempt:(round||1)===1,
+    elapsedClozeRoundMs:Date.now()-clozeStarted,inputMethod});
+  }
+  const count=scores.filter(Boolean).length;
+  makeEvent('round_end',{submissionId,correctCount:count,total:scores.length});
+  if(count===scores.length){
+   makeEvent('stage_pass',{passedStage:'cloze',submissionId});makeEvent('session_complete',{submissionId});
+   completed=true;saveSnapshot();render();flush();
+  }else{
+   msg(`本輪 ${count}/${scores.length}，尚未全對，請繼續練習。`,'bad');
+   round++;saveSnapshot();
+   submit.textContent='重新填空';submit.onclick=()=>{clozeStarted=Date.now();cloze()};
+  }
+ };
+}

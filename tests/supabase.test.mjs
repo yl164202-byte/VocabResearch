@@ -20,6 +20,7 @@ const words = [
 before(async()=>{
   await db.exec('create role anon; create role authenticated;');
   await db.exec(sql);
+  await db.exec(await readFile(new URL('../supabase/migrations/202611250002_private_cloze.sql',import.meta.url),'utf8'));
   await db.query('select vocab_private.register_student($1,$2)',[name,pin]);
   await db.query('select vocab_private.register_student($1,$2)',['S002','fixture-only-2']);
   for(const [id,version] of [['L1','v1'],['L1','v2'],['L2','v1'],['L3','v1']]){
@@ -73,6 +74,18 @@ test('GAS-shaped course registration preserves IDs and two versions share the da
   assert.equal(denied.sessionId,'');
   assert.equal((await request('daily_status',{sessionId:ids.L1})).sessionId,ids.L1);
   assert.equal(await count('daily'),1);
+});
+
+test('only the active session can receive alias grades and no answer key is returned',async()=>{
+  const wrong=await request('grade_cloze',{sessionId:ids.L1,answers:{W1:'錯誤',W2:'第二'}});
+  assert.deepEqual(wrong.grades,{W1:false,W2:true});
+  const right=await request('grade_cloze',{sessionId:ids.L1,answers:{W1:'第一。',W2:'乙'}});
+  assert.deepEqual(right.grades,{W1:true,W2:true});
+  assert.equal(JSON.stringify(right).includes('第一'),false);
+  assert.equal((await request('grade_cloze',{sessionId:ids.L1,answers:{W1:'第一'}})).error,'invalid_answers');
+  assert.equal((await request('grade_cloze',{studentCode:'S002',pin:'fixture-only-2',sessionId:ids.L1,
+    answers:{W1:'第一',W2:'第二'}})).error,'daily_session_mismatch');
+  assert.equal(await count('events'),0);
 });
 
 test('invalid batches are atomic; intact retry deduplicates and mixed sessions are rejected',async()=>{

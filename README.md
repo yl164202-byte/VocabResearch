@@ -4,7 +4,7 @@
 
 ## 測試環境設定
 
-1. 在 Supabase Dashboard 建立獨立測試專案。用該專案的 SQL Editor 執行 `supabase/migrations/202611250001_vocab.sql` 一次。此遷移會建立專用 schema 和一個公開 RPC；請先在測試專案使用。
+1. 在獨立測試專案以已登入的 Supabase CLI 按順序套用 `supabase/migrations/` 的遷移。既有專案先核對遠端歷史，已套用的基準版本無須重跑。新版私有答案判分使用 `202611250002_private_cloze.sql`。
 2. 複製 `student/backend.example.json` 到 `student/backend.json`，填入測試 Project URL 和 `sb_publishable_…`。該檔已列入 Git 忽略清單。請將資料庫密碼與 Secret Key 保存在私人環境。
 3. 在 SQL Editor 用一次性的匿名學生與測試 PIN 呼叫 `select vocab_private.register_student('TEST001', '<測試 PIN>');`。以教師端匯出的私人課程 JSON 呼叫 `select vocab_private.register_course($course$<私人課程 JSON>$course$::jsonb);`。課程 ID、版本與生詞 ID 須對應學生教材。替換佔位內容後，只在私人測試專案輸入。
 4. 從本分支啟動本機靜態網站，例如在 `git-dev` 執行 `python -m http.server 8000 --bind 127.0.0.1`，再以支援 Web Locks 的瀏覽器開啟 `http://localhost:8000/student/`。以相同帳號測雙分頁及換版本，以另一帳號確認練習與事件相互隔離。
@@ -16,7 +16,7 @@
 
 ## 切換前待辦
 
-GAS 的 Google Sheets 資料及舊版瀏覽器佇列保留原處。若正式收案需要接續既有資料，先確認歷史匯入與臺灣日期切換方案，包括舊 PIN 的重新登錄。現有教師端可匯出相容的私人答案 JSON。教師端設定畫面和批次上架流程仍是原版，整合前避免用舊版 GUI 更新學生共用網頁。正式部署應由整合測試通過後另行安排。
+GAS 的 Google Sheets 資料及舊版瀏覽器佇列保留原處。若正式收案需要接續既有資料，先確認歷史匯入與臺灣日期切換方案，包括舊 PIN 的重新登錄。本分支的教師 GUI 支援私人答案登錄與教材發布。原始資料夾仍保留舊版教師端，請從本分支啟動新版。正式部署應由整合測試通過後另行安排。
 
 ## 實際 HTTP 與 Chrome 整合測試
 
@@ -32,3 +32,28 @@ GAS 的 Google Sheets 資料及舊版瀏覽器佇列保留原處。若正式收�
 
 此分支供審查。學生正式上線前需另外確認公開站的 `backend.json` 供應方式，
 並完成正式教材版本和學生代碼的授權登錄。
+
+## 教師端 GUI
+
+從本開發分支啟動 `GUI_batch.bat`，或在此目錄執行 `python -m streamlit run app.py`。
+預設只監聽本機。以 `pip install -r requirements.txt` 安裝教師端相依套件。
+若分支副本與原有教材同一層，GUI 會讀取上一層的 `data/` 與 `drafts/`。
+獨立安裝可用 `VOCAB_LOCAL_DATA_DIR` 指向包含這兩個目錄的私人資料位置。
+
+在側欄儲存 Project URL、publishable key 與 GitHub 開發分支。可用 `SUPABASE_CLI`
+或側欄的 CLI 路徑指定已登入的 CLI v3 執行檔。教師權限繼承本機的 Supabase CLI
+工作階段。GitHub 認證沿用本機加密儲存或 `GITHUB_TOKEN`。PIN 欄位送出後清空，
+且在發出管理查詢前以 bcrypt 雜湊。請以本機教師工作站使用。
+
+- 「匯出與 GitHub 發布」可單獨登錄私人課程，或依序登錄 Supabase 並提交
+  GitHub 開發分支。公開教材、索引、共用網頁及只含 URL 與 publishable key
+  的 `student/backend.json` 由同一筆 Git commit 發布。相同版本與內容可重試，
+  修改已登錄教材須提高版本號。GUI 會顯示已確認的階段。
+- 已發布版本的顯示與隱藏只更新該開發分支的索引。
+- 「學生與研究紀錄」可建立匿名學生與 PIN，並按課程查閱最近 200 筆每日
+  工作階段、完成時間、事件數和錯誤作答數。
+- 新教材的備選答案只放在 Supabase。離線填空會保留表單文字，重連後可以
+  再送判分。已產生的研究事件仍可離線暫存及重送。公開練習教材包含生詞本身。
+
+目前 GUI 發布範圍是既有 `codex/` 開發分支。公開 Pages 切換與正式教材／學生
+登錄需另行核准。舊課程檔、原始教材及歷史草稿保留原樣。

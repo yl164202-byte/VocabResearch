@@ -16,16 +16,34 @@ test('live Supabase HTTP and local Chrome against a synthetic course', { timeout
   assert.ok(pin);
   const { chromium } = await import(process.env.VOCAB_PLAYWRIGHT_ENTRY || 'playwright-core');
   const assets = new Map();
+  const upstream=process.env.VOCAB_E2E_ASSET_BASE;
+  const remote=async (path)=>{
+    const r=await fetch(upstream+'/'+path);
+    assert.equal(r.status,200,'published asset '+path);
+    return r;
+  };
   for (const [file,type] of [['index.html','text/html'],['app.js','text/javascript'],['style.css','text/css']]) {
-    assets.set('/'+file,[type,await readFile(new URL('../student/'+file,import.meta.url))]);
+    assets.set('/'+file,[type,upstream?Buffer.from(await (await remote(file)).arrayBuffer()):await readFile(new URL('../student/'+file,import.meta.url))]);
   }
   const json = (path,data) => assets.set(path,['application/json',JSON.stringify(data)]);
-  json('/backend.json',{projectUrl,publishableKey});
-  json('/lessons/index.json',{files:['v1.json','v2.json']});
-  for (const version of ['v1','v2']) {
-    json('/lessons/'+version+'.json',{schema:'vocab-research-1',id:courseId,version,title:'合成教材',
-      availableLanguages:['en'],words:[{id:'W1',word:'甲',pinyin:'jiǎ',meanings:{en:'alpha'},
-        accepted:['第一'],sentence:'這是＿＿個例子。'}]});
+  const names=['v1','v2'].map(v=>upstream?courseId+'__'+v+'.json':v+'.json');
+  const config=upstream?await (await remote('backend.json')).json():{projectUrl,publishableKey};
+  assert.equal(config.projectUrl,projectUrl);
+  assert.ok(config.publishableKey===publishableKey,'Published key differs from the selected project key');
+  assert.deepEqual(Object.keys(config).sort(),['projectUrl','publishableKey']);
+  json('/backend.json',config);
+  if(upstream){
+    const index=await (await remote('lessons/index.json')).json();
+    assert.ok(names.every(x=>index.files.includes(x)&&!index.hidden?.includes(x)));
+  }
+  json('/lessons/index.json',{files:names});
+  for (const [i,version] of ['v1','v2'].entries()) {
+    const document=upstream?await (await remote('lessons/'+names[i])).json():
+      {schema:'vocab-research-1',id:courseId,version,title:'合成教材',clozeGrading:'server',
+       availableLanguages:['en'],words:[{id:'W1',word:'甲',pinyin:'jiǎ',meanings:{en:'alpha'},sentence:'這是＿＿個例子。'}]};
+    assert.equal(document.clozeGrading,'server');
+    assert.ok(document.words.every(w=>!('accepted' in w)));
+    json('/lessons/'+names[i],document);
   }
   const server = createServer((req,res) => {
     const asset=assets.get(new URL(req.url,'http://localhost').pathname);
@@ -65,9 +83,15 @@ test('live Supabase HTTP and local Chrome against a synthetic course', { timeout
     assert.ok([400,401,403,404,406].includes(denied.status));
   });
   let firstAccepted=false;
+  let gradingInterrupted=false;
   let acceptedIds=[];
   await first.route(rpc,async route=>{
     const {packet}=route.request().postDataJSON();
+    if(packet.operation==='grade_cloze'&&!gradingInterrupted){
+      gradingInterrupted=true;
+      await route.abort('internetdisconnected');
+      return;
+    }
     if(packet.operation!=='events'||firstAccepted){await route.continue();return;}
     firstAccepted=true;
     const result=await route.fetch();
@@ -95,11 +119,34 @@ test('live Supabase HTTP and local Chrome against a synthetic course', { timeout
     assert.deepEqual(ack.eventIds,acceptedIds);
     await first.waitForFunction(()=>/0 筆/.test(document.querySelector('#pending').textContent));
   });
+  if(process.env.VOCAB_E2E_CODE2) await t.test('another student and concurrent duplicate batches remain isolated',async()=>{
+    const identity={studentCode:process.env.VOCAB_E2E_CODE2,pin:process.env.VOCAB_E2E_PIN2,
+      courseId,courseVersion:'v1',protocol:'supabase-v1'};
+    const status=await assertRpc({...identity,operation:'daily_status',requestId:randomUUID()});
+    assert.equal(status.status,'not_started');
+    const sessionId=randomUUID();
+    const current=await assertRpc({...identity,sessionId,practiceDate:status.practiceDate,
+      operation:'daily_start',requestId:randomUUID()});
+    assert.equal(current.status,'in_progress');
+    const event={studentCode:identity.studentCode,courseId,courseVersion:'v1',sessionId,
+      practiceDate:status.practiceDate,study:'vocab',mode:'practice',stage:'card',
+      action:'session_start',eventId:randomUUID()};
+    const results=await Promise.all([1,2].map(()=>assertRpc({...identity,operation:'events',
+      requestId:randomUUID(),events:[event]})));
+    assert.ok(results.every(result=>result.ok&&result.eventIds[0]===event.eventId));
+  });
   await t.test('all-correct completion locks the day in a fresh browser context and another version',async()=>{
     await first.click('#next');
     await first.locator('[data-left]').click();
     await first.locator('[data-right]').click();
     await first.click('#nextGroup');
+    await first.locator('[data-fill]').fill('錯誤');
+    await first.click('#submitCloze');
+    await first.getByText(/判分未完成/).waitFor();
+    assert.equal(await first.locator('[data-fill]').inputValue(),'錯誤');
+    await first.click('#submitCloze');
+    await first.getByText(/尚未全對/).waitFor();
+    await first.click('#submitCloze');
     await first.locator('[data-fill]').fill('第一');
     await first.click('#submitCloze');
     await sync(first,'Supabase 已確認並鎖定');
