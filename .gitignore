@@ -37,3 +37,4 @@ venv/
 .streamlit/secrets.toml
 student/backend.json
 node_modules/
+/supabase/.temp/
