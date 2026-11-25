@@ -17,11 +17,16 @@ def load_teacher(folder):
     (folder/'drafts').mkdir()
     lesson = {'冊': '合成測試冊', '課': '合成測試課', '對話1':'這是第一個例子。',
               '對話1生詞':['甲']}
+    if os.getenv('VOCAB_E2E_MULTIPLE'):
+        lesson['對話1生詞'].append('乙')
     (folder/'data'/'DANGDAI_ALL.json').write_text(json.dumps([lesson], ensure_ascii=False), encoding='utf-8')
     from core import unique_words, lesson_key
     rows = unique_words(lesson, ['對話1'])
     rows[0].update(pinyin='jiǎ', meanings={'en':'alpha', 'vi':'a', 'id':'alfa'},
                    sentence='這是＿＿個例子。', accepted='第一、首')
+    if len(rows)>1:
+        rows[1].update(pinyin='yǐ',meanings={'en':'beta','vi':'b','id':'beta'},
+                       sentence='請選擇第＿＿項。',accepted='第二')
     draft = {'lesson_key':lesson_key(lesson),'rows':rows,'parts':['對話1'],
              'meta':{'id':os.environ.get('VOCAB_E2E_COURSE','IT_LOCAL'),'version':'v1','title':'合成測試教材'}}
     (folder/'drafts'/'B01_L01_v1.json').write_text(json.dumps(draft, ensure_ascii=False), encoding='utf-8')
@@ -104,6 +109,10 @@ def run_cloud():
             button(at,'登錄 Supabase 並提交 GitHub').click().run()
             check(at)
             assert any('GitHub 開發分支已提交' in x.value for x in at.success)
+        next(t for t in at.text_input if t.label.startswith('已登錄版本')).set_value(os.environ['VOCAB_E2E_COURSE'])
+        button(at,'查詢 Supabase 課程版本').click().run()
+        check(at)
+        assert set(at.dataframe[-1].value['version'])=={'v1','v2'}
         button(at,'測試連線與讀取課程清單').click().run()
         check(at)
         lesson_file=os.environ['VOCAB_E2E_COURSE']+'__v1.json'
@@ -126,10 +135,39 @@ def run_status():
         rows={r['student_code']:r for r in at.session_state['research_rows']}
         first=rows[os.environ['VOCAB_E2E_CODE']]
         second=rows[os.environ['VOCAB_E2E_CODE2']]
-        assert first['status']=='completed' and int(first['incorrect_answers'])==1
+        assert first['status']=='completed' and int(first['incorrect_answers'])==(2 if os.getenv('VOCAB_E2E_MULTIPLE') else 1)
         assert int(first['event_count'])>1
         assert second['status']=='in_progress' and int(second['event_count'])==1
-        print('Live teacher GUI reports completed and incomplete students, including one incorrect answer and deduplicated batch')
+        from teacher_backend import TeacherBackend, value
+        from core import stable_word_id
+        course=value(os.environ['VOCAB_E2E_COURSE'])
+        events=TeacherBackend(os.environ['VOCAB_E2E_URL']).query(
+            f"select * from vocab_private.research_events where course_id=({course} #>> '{{}}') order by server_time")
+        codes=(os.environ['VOCAB_E2E_CODE'],os.environ['VOCAB_E2E_CODE2'])
+        one,two=([event for event in events if event['student_code']==code] for code in codes)
+        assert len(one)==int(first['event_count']) and len(two)==int(second['event_count'])==1
+        assert len({e['event_id'] for e in events})==len(events)
+        assert len({e['session_id'] for e in events})==2
+        assert {e['version'] for e in events}=={'v1'}
+        assert sum(e['action']=='session_start' for e in one)==1
+        assert sum(e['action']=='session_complete' for e in one)==1
+        card=[e for e in one if e['action']=='card_flip']
+        assert len(card)==1 and card[0]['word_id']==stable_word_id('甲')
+        answers=[e for e in one if e['action']=='answer']
+        assert {e['word_id'] for e in answers}=={stable_word_id(w) for w in ('甲乙' if os.getenv('VOCAB_E2E_MULTIPLE') else '甲')}
+        for stage,wrong_input in [('cloze','錯誤')]+([('match','beta')] if os.getenv('VOCAB_E2E_MULTIPLE') else []):
+            attempts=[e for e in answers if e['stage']==stage and e['word_id']==stable_word_id('甲')]
+            failed,succeeded=sorted(attempts,key=lambda row:int(row['attempt']))
+            assert (failed['correct_server'],succeeded['correct_server'])==(False,True)
+            assert failed['selected']==wrong_input
+            assert (failed['extra_json']['firstAttempt'],succeeded['extra_json']['firstAttempt'])==(True,False)
+            assert [int(e['attempt']) for e in (failed,succeeded)]==[1,2]
+            assert [e['extra_json']['wordErrorCount'] for e in (failed,succeeded)]==[1,1]
+            if stage=='cloze':
+                assert succeeded['selected']=='第一'
+                assert failed['extra_json']['submissionId']!=succeeded['extra_json']['submissionId']
+        assert sum(e['correct_server'] is False for e in one)==int(first['incorrect_answers'])
+        print('Live teacher GUI reports completed and incomplete students, with exact cloud event IDs, attempts, errors and isolated sessions')
 
 
 if __name__ == '__main__':

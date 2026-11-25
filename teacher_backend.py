@@ -92,6 +92,13 @@ class TeacherBackend:
         if not rows or rows[0].get('registered') is not True:
             raise RuntimeError('Supabase 未確認學生建立結果')
 
+    def course_versions(self, course=''):
+        doc = value(course.strip())
+        return self.query(f"""select id,version,active,document->>'title' as title,
+          jsonb_array_length(document->'words') as word_count
+          from vocab_private.courses where ({doc} #>> '{{}}') in ('',id)
+          order by id,version limit 200;""")
+
     def practice_status(self, course=''):
         doc = value(course.strip())
         return self.query(f"""select student_code,course_id,course_version,practice_date,started_at,completed_at,

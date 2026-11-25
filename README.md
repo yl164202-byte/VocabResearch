@@ -57,3 +57,18 @@ GAS 的 Google Sheets 資料及舊版瀏覽器佇列保留原處。若正式收�
 
 目前 GUI 發布範圍是既有 `codex/` 開發分支。公開 Pages 切換與正式教材／學生
 登錄需另行核准。舊課程檔、原始教材及歷史草稿保留原樣。
+
+## 教師試用前自動化驗收
+
+在安裝 Python 與 Node 相依套件的開發工作目錄執行
+`./tests/run-acceptance.ps1`，可重跑教師 AppTest、本機 PostgreSQL 和 Chrome
+三階段預覽。教師測試使用合成冊課及臨時草稿，表格欄位以 Streamlit 的
+WidgetState 格式提交。
+
+帶上 `-Cloud -Cli <Supabase CLI 路徑>` 會另外使用已授權的 GitHub 與 Supabase
+登入，建立隔離的 `codex/vocab-accept-it-*` 分支與合成資料。Chrome 從該分支
+實際提交的教材開始，之後只讀核對教師畫面及雲端事件。測試不提交正式教材，
+也不合併 `main`。本流程會留下可追查的合成測試分支與資料。
+
+配對與填空依教師選入的詞彙、完整的詞義語言、題句與審核的備選答案運作。
+階段次序和全對門檻依既有研究規則固定。

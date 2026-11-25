@@ -8,7 +8,7 @@ const { VOCAB_E2E_URL: projectUrl, VOCAB_E2E_KEY: publishableKey, VOCAB_E2E_CODE
   VOCAB_E2E_PIN: pin, VOCAB_E2E_COURSE: courseId, VOCAB_E2E_CHROME: executablePath } = process.env;
 const rpc = projectUrl + '/rest/v1/rpc/vocab_request';
 
-test('live Supabase HTTP and local Chrome against a synthetic course', { timeout: 80000 }, async t => {
+test('live Supabase HTTP and local Chrome against a synthetic course', { timeout: 120000 }, async t => {
   assert.match(projectUrl || '', /^https:\/\/[a-z0-9-]+\.supabase\.co$/);
   assert.match(publishableKey || '', /^sb_publishable_/);
   assert.match(code || '', /^IT_/);
@@ -37,12 +37,14 @@ test('live Supabase HTTP and local Chrome against a synthetic course', { timeout
     assert.ok(names.every(x=>index.files.includes(x)&&!index.hidden?.includes(x)));
   }
   json('/lessons/index.json',{files:names});
+  const lessons=[];
   for (const [i,version] of ['v1','v2'].entries()) {
     const document=upstream?await (await remote('lessons/'+names[i])).json():
       {schema:'vocab-research-1',id:courseId,version,title:'合成教材',clozeGrading:'server',
        availableLanguages:['en'],words:[{id:'W1',word:'甲',pinyin:'jiǎ',meanings:{en:'alpha'},sentence:'這是＿＿個例子。'}]};
     assert.equal(document.clozeGrading,'server');
     assert.ok(document.words.every(w=>!('accepted' in w)));
+    lessons.push(document);
     json('/lessons/'+names[i],document);
   }
   const server = createServer((req,res) => {
@@ -135,21 +137,44 @@ test('live Supabase HTTP and local Chrome against a synthetic course', { timeout
       requestId:randomUUID(),events:[event]})));
     assert.ok(results.every(result=>result.ok&&result.eventIds[0]===event.eventId));
   });
-  await t.test('all-correct completion locks the day in a fresh browser context and another version',async()=>{
-    await first.click('#next');
-    await first.locator('[data-left]').click();
-    await first.locator('[data-right]').click();
+  const words=lessons[0].words;
+  const pick=async(word,meaning)=>{
+    await first.locator('[data-left]').filter({hasText:word}).click();
+    await first.locator('[data-right]').filter({hasText:meaning}).click();
+  };
+  await t.test('flashcards render and matching progress survives re-login',async()=>{
+    await first.locator('#flip').click();
+    assert.match(await first.locator('#flip').innerText(),new RegExp(words[0].meanings.en));
+    for(const word of words) await first.click('#next');
+    if(words.length>1){
+      await pick(words[0].word,words[1].meanings.en);
+      await first.getByText(/配對錯誤/).waitFor();
+      await start(first);
+      await first.waitForFunction(()=>document.querySelector('#matchStatus')?.textContent.includes('錯誤 1 次'));
+    }
+    for(const word of words) await pick(word.word,word.meanings.en);
     await first.click('#nextGroup');
-    await first.locator('[data-fill]').fill('錯誤');
+  });
+  await t.test('cloze preserves offline text, then accepts retry and a reviewed alternate answer',async()=>{
+    const input=(word)=>first.locator('[data-fill="'+word.id+'"]');
+    await input(words[0]).fill('錯誤');
+    for(const word of words.slice(1)) await input(word).fill(word.word);
     await first.click('#submitCloze');
     await first.getByText(/判分未完成/).waitFor();
-    assert.equal(await first.locator('[data-fill]').inputValue(),'錯誤');
+    assert.equal(await input(words[0]).inputValue(),'錯誤');
     await first.click('#submitCloze');
     await first.getByText(/尚未全對/).waitFor();
     await first.click('#submitCloze');
-    await first.locator('[data-fill]').fill('第一');
+    await input(words[0]).fill('第一');
+    for(const word of words.slice(1)) await input(word).fill(word.word);
     await first.click('#submitCloze');
     await sync(first,'Supabase 已確認並鎖定');
+  });
+  await t.test('completed student is locked after refresh, second tab and another version',async()=>{
+    await start(first);
+    await sync(first,'已達標完成');
+    await start(second);
+    await sync(second,'已達標完成');
     const fresh=await browser.newContext();
     const page=await fresh.newPage();
     await start(page,'1');

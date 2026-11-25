@@ -20,11 +20,12 @@ st.title('華語生詞記憶研究｜教師端 GUI')
 st.caption(f'v{APP_VERSION} / {BACKEND_PROTOCOL}｜Supabase 教師管理與每日練習')
 
 @st.cache_data
-def cached_data():return load_book(DATA)
+def cached_data(path, modified):return load_book(path)
 
 SETTINGS=LOCAL/'teacher_supabase_settings.json'
 try:
     saved_settings=json.loads(SETTINGS.read_text(encoding='utf-8'))
+    if not isinstance(saved_settings,dict):saved_settings={}
 except (OSError,ValueError):
     saved_settings={}
 for field,default in (('projectUrl',''),('publishableKey',''),('cliPath',''),('branch',BRANCH)):
@@ -33,9 +34,12 @@ for field,default in (('projectUrl',''),('publishableKey',''),('cliPath',''),('b
 def reset_github_status():
     st.session_state.pop('github_check',None)
 
+def clear_research_rows():
+    st.session_state.pop('research_rows',None)
+
 with st.sidebar:
     st.subheader('Supabase 與發布設定')
-    st.text_input('Supabase Project URL',key='sb_projectUrl')
+    st.text_input('Supabase Project URL',key='sb_projectUrl',on_change=clear_research_rows)
     st.text_input('Supabase publishable key',key='sb_publishableKey')
     st.text_input('Supabase CLI 路徑（選填）',key='sb_cliPath')
     st.text_input('GitHub 開發分支',key='sb_branch',on_change=reset_github_status)
@@ -61,8 +65,8 @@ with st.sidebar:
     st.markdown('[開啟學生端網站]('+SITE+')')
     st.warning('目前學生端及 Supabase 尚未完成正式延宕測驗安全鎖定。此版本僅供教材編輯與試行，不可直接正式收案。',icon='⚠️')
 try:
-    items=json.loads(uploaded.getvalue().decode('utf-8-sig')) if uploaded is not None else cached_data()
-    if not isinstance(items,list) or any(not isinstance(x,dict) or '冊' not in x or '課' not in x for x in items):raise ValueError('JSON 應為含「冊」「課」的課次物件陣列')
+    items=json.loads(uploaded.getvalue().decode('utf-8-sig')) if uploaded is not None else cached_data(str(DATA), DATA.stat().st_mtime_ns)
+    if not isinstance(items,list) or not items or any(not isinstance(x,dict) or '冊' not in x or '課' not in x for x in items):raise ValueError('JSON 應為含「冊」「課」的課次物件陣列')
 except Exception as ex:st.error('教材匯入失敗：'+str(ex));st.stop()
 
 books=list(dict.fromkeys(str(x['冊']) for x in items))
@@ -71,11 +75,13 @@ books=list(dict.fromkeys(str(x['冊']) for x in items))
 def _book_changed():
     st.query_params['book']=st.session_state['selected_book']
     # 切換冊別時清掉舊課次，避免不同冊沿用同名或同索引課次。
-    if 'lesson' in st.query_params:del st.query_params['lesson']
+    for name in ('lesson','draft'):
+        if name in st.query_params:del st.query_params[name]
 
 def _lesson_changed(widget_key):
     st.query_params['book']=st.session_state['selected_book']
     st.query_params['lesson']=st.session_state[widget_key]
+    if 'draft' in st.query_params:del st.query_params['draft']
 
 book_from_url=st.query_params.get('book','')
 book_index=books.index(book_from_url) if book_from_url in books else 0
@@ -93,6 +99,40 @@ lesson=next(x for x in lessons if x['課']==lesson_name)
 key=lesson_key(lesson)
 key_hash=re.sub(r'[^0-9A-Za-z]','_',f'{books.index(book)+1}_{lessons.index(lesson)+1}')
 def default_id():return f'B{books.index(book)+1:02d}_L{lessons.index(lesson)+1:02d}'
+DRAFT_FIELDS={'id':'course_id','title':'course_title','version':'course_version'}
+
+def read_draft(name):
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+\.json',name):
+        return None
+    path=DRAFTS/name
+    if not path.is_file():
+        return None
+    saved=json.loads(path.read_text(encoding='utf-8'))
+    if not isinstance(saved,dict) or saved.get('lesson_key')!=key:
+        return None
+    if not isinstance(saved.get('rows'),list) or not isinstance(saved.get('meta'),dict):
+        raise ValueError('草稿格式錯誤')
+    return saved
+
+def apply_draft(saved):
+    for row in saved['rows']:
+        if not isinstance(row.get('meanings'),dict):row['meanings']={}
+        for lang in ('en','vi','id'):row['meanings'].setdefault(lang,'')
+    st.session_state['rows']=saved['rows']
+    st.session_state['parts']=saved.get('parts',[])
+    for field,widget in DRAFT_FIELDS.items():
+        if field in saved['meta']:st.session_state[widget]=saved['meta'][field]
+    st.session_state['table_revision']=st.session_state.get('table_revision',0)+1
+
+def draft_names():
+    names=[]
+    for path in sorted(DRAFTS.glob('*.json')):
+        try:
+            if read_draft(path.name):names.append(path.name)
+        except (OSError,ValueError,TypeError):
+            continue
+    return names
+
 if st.session_state.get('active_lesson')!=key:
     st.session_state['active_lesson']=key
     st.session_state['table_revision']=st.session_state.get('table_revision',0)+1
@@ -109,21 +149,12 @@ if st.session_state.get('active_lesson')!=key:
     st.session_state['practice_open']=''
     st.session_state['delayed_open']=''
     st.session_state['delayed_close']=''
-    # 優先使用批次轉換的教師草稿；不會把教材 JSON 當成已確認的詞義。
-    auto_draft=DRAFTS/(default_id()+'_v1.json')
-    if auto_draft.exists():
-        try:
-            saved=json.loads(auto_draft.read_text(encoding='utf-8'))
-            if saved.get('lesson_key')==key:
-                st.session_state['rows']=saved.get('rows',st.session_state['rows'])
-                st.session_state['parts']=saved.get('parts',st.session_state['parts'])
-                for field, statekey in [('id','course_id'),('title','course_title'),('version','course_version'),('practiceOpenAt','practice_open'),('delayedOpenAt','delayed_open'),('delayedCloseAt','delayed_close')]:
-                    st.session_state[statekey]=saved.get('meta',{}).get(field,st.session_state[statekey])
-                for row in st.session_state['rows']:
-                    if not isinstance(row.get('meanings'),dict):row['meanings']={}
-                    for lang in ('en','vi','id'):row['meanings'].setdefault(lang,'')
-        except (ValueError,OSError,TypeError) as ex:
-            st.warning('草稿讀取失敗，已改載教材生詞表：'+str(ex))
+    # Open the remembered draft when present. Preserve the legacy v1 default.
+    try:
+        saved=read_draft(st.query_params.get('draft','')) or read_draft(default_id()+'_v1.json')
+        if saved: apply_draft(saved)
+    except (OSError,ValueError,TypeError):
+        st.warning('草稿無法讀取，已載入預設教材生詞。')
 
 tab_text,tab_words,tab_review,tab_publish,tab_research=st.tabs(['① 課文與生詞','② 詞義／填空題編輯','③ 檢核及預覽','④ 匯出與 GitHub 發布','⑤ 學生與研究紀錄'])
 with tab_text:
@@ -180,6 +211,8 @@ def save_current_draft():
     meta={'id':st.session_state.get('course_id',default_id()),'version':st.session_state.get('course_version','v1'),'title':st.session_state.get('course_title',''),'practiceOpenAt':None,'delayedOpenAt':None,'delayedCloseAt':None}
     name=re.sub(r'[^A-Za-z0-9_.-]','_',meta['id']+'_'+meta['version'])+'.json'
     target=DRAFTS/name
+    if target.exists() and not read_draft(name):
+        raise ValueError('草稿檔名已由其他課次使用，請調整課程 ID 或版本')
     payload={'lesson_key':key,'rows':st.session_state['rows'],'meta':meta,'parts':st.session_state['parts']}
     temp=target.with_suffix('.json.tmp')
     temp.write_text(json.dumps(payload,ensure_ascii=False,indent=2),encoding='utf-8')
@@ -187,6 +220,9 @@ def save_current_draft():
         import shutil
         shutil.copy2(target,target.with_suffix('.json.review.bak'))
     temp.replace(target)
+    st.query_params['book']=book
+    st.query_params['lesson']=str(lesson_name)
+    st.query_params['draft']=name
     return name
 
 with tab_words:
@@ -246,7 +282,7 @@ with tab_words:
         else: st.success('目前沒有空白或格式問題。')
         if st.button('儲存整課修改',type='primary',key='save_whole_'+key_hash):
             try: st.success('已儲存：'+save_current_draft())
-            except OSError as ex: st.error('儲存失敗：'+str(ex))
+            except (OSError,ValueError) as ex: st.error('儲存失敗：'+str(ex))
         st.caption('修改後請按儲存，再切換課次。初始檢查欄會在重新整理表格時更新。')
         if st.button('重新整理檢查狀態',key='refresh_'+key_hash):
             st.session_state['table_revision']=st.session_state.get('table_revision',0)+1
@@ -431,28 +467,22 @@ with tab_publish:
         st.info('若是首次發布，需到 GitHub Pages 設定 main / (root)。GitHub 提交成功不代表 Pages 已完成部署。')
     st.divider()
     st.markdown('#### 草稿保存')
-    draft_name=re.sub(r'[^A-Za-z0-9_.-]','_',meta['id']+'_'+meta['version'])
-    draft_file=DRAFTS/(draft_name+'.json')
     if st.button('儲存教師端草稿（本機）'):
-        payload={'lesson_key':key,'rows':st.session_state['rows'],'meta':meta,'parts':st.session_state['parts']}
-        save_current_draft()
-        st.success('已儲存：'+draft_file.name)
-    def restore_draft():
-        draft=json.loads(draft_file.read_text(encoding='utf-8'))
-        if draft.get('lesson_key')!=key:return
-        st.session_state['rows']=draft['rows'];st.session_state['parts']=draft.get('parts',[])
-        st.session_state['table_revision']=st.session_state.get('table_revision',0)+1
-        for mk,sk in [('id','course_id'),('title','course_title'),('version','course_version'),('practiceOpenAt','practice_open'),('delayedOpenAt','delayed_open'),('delayedCloseAt','delayed_close')]:
-            st.session_state[sk]=draft.get('meta',{}).get(mk,'')
-        # 讀取舊草稿時，不沿用已廢除的個別生詞勾選狀態。
-        for row in st.session_state['rows']:
-            row.pop('selected',None)
-            if not isinstance(row.get('meanings'),dict):row['meanings']={}
-            for lang in ('en','vi','id'):row['meanings'].setdefault(lang,'')
-        for k in list(st.session_state.keys()):
-            if k.startswith(('pin_'+key_hash+'_','mean_'+key_hash+'_','mean_en_'+key_hash+'_','mean_vi_'+key_hash+'_','mean_id_'+key_hash+'_','sent_'+key_hash+'_','accepted_'+key_hash+'_','choose_'+key_hash+'_')):
-                del st.session_state[k]
-    if draft_file.exists():
+        try: st.success('已儲存：'+save_current_draft())
+        except (OSError,ValueError) as ex: st.error('儲存失敗：'+str(ex))
+    picks=draft_names()
+    if picks:
+        selected=st.selectbox('選擇要開啟的本課草稿',picks,key='draft_pick_'+key_hash)
+        def restore_draft():
+            try:
+                saved=read_draft(selected)
+                if not saved:raise ValueError('找不到本課草稿')
+                apply_draft(saved)
+                st.query_params['book']=book
+                st.query_params['lesson']=str(lesson_name)
+                st.query_params['draft']=selected
+            except (OSError,ValueError,TypeError) as ex:
+                st.error('無法開啟草稿：'+str(ex))
         st.button('載入這課的本機草稿',on_click=restore_draft)
 
 with tab_research:
@@ -465,8 +495,15 @@ with tab_research:
                 TeacherBackend(st.session_state.sb_projectUrl,st.session_state.sb_cliPath).register_student(new_code.strip(),new_pin)
                 st.success('已建立學生 '+new_code.strip())
             except (ValueError,RuntimeError) as ex:st.error(str(ex))
+    st.markdown('#### Supabase 課程版本')
+    catalog_course=st.text_input('已登錄版本的課程 ID（留空列出全部）')
+    if st.button('查詢 Supabase 課程版本'):
+        try:
+            versions=TeacherBackend(st.session_state.sb_projectUrl,st.session_state.sb_cliPath).course_versions(catalog_course)
+            st.dataframe(versions,hide_index=True)
+        except (ValueError,RuntimeError) as ex:st.error(str(ex))
     st.markdown('#### 每日練習與研究紀錄')
-    filter_course=st.text_input('依課程 ID 篩選（留空列出全部）')
+    filter_course=st.text_input('依課程 ID 篩選（留空列出全部）',on_change=clear_research_rows)
     if st.button('查閱最近 200 筆工作階段'):
         try:
             rows=TeacherBackend(st.session_state.sb_projectUrl,st.session_state.sb_cliPath).practice_status(filter_course)
