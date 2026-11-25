@@ -3,6 +3,7 @@ const $=x=>document.getElementById(x), h=s=>String(s??'').replace(/[&<>"']/g,c=>
 const preview=!!window.VOCAB_PREVIEW;
 const APP_VERSION='0.3.11', PROTOCOL='supabase-v1';
 let dailyDate='',dailySyncing=false,matchState=null,activeLock=null;
+let clozeMethods={},clozeErrors={};
 let sequence=0,authenticatedStudent='';
 let courses=[],lesson=null,student='',pin='',phase=0,ix=0,flipped=false,round=0,attempt=0,answers={},testing=false,completed=false,uploading=false,language='en',sessionId='',sessionStarted=0,matchStarted=0,clozeStarted=0;
 const eventPrefix='vocabSupabasePending:', rejectedPrefix='vocabSupabaseRejected:';
@@ -31,13 +32,13 @@ function snapshotPath({studentCode=student,courseId=lesson?.id,practiceDate=dail
 }
 function readLocal(key){try{return JSON.parse(localStorage.getItem(key)||'null')}catch{return null}}
 function reservationPath(code,id,date){return 'vocabSupabaseReservation:'+JSON.stringify([backendConfig?.projectUrl,code,id,date])}
-function saveSnapshot(){if(preview||!activeLock||!sessionId||!dailyDate)return false;try{localStorage.setItem(snapshotPath(),JSON.stringify({student,courseId:lesson.id,courseVersion:lesson.version,lesson,practiceDate:dailyDate,sessionId,sessionStarted,matchStarted,clozeStarted,sequence,phase,ix,flipped,round,attempt,language,clozeOrder:clozeOrder.map(x=>x.id),matchState,clozeInput:phase===2?[...$('screen').querySelectorAll('[data-fill]')].map(x=>[x.dataset.fill,x.value]):[],completed}));return true;}catch(e){$('sync').textContent='本機進度儲存失敗，請確認瀏覽器未封鎖網站資料'}}
+function saveSnapshot(){if(preview||!activeLock||!sessionId||!dailyDate)return false;try{localStorage.setItem(snapshotPath(),JSON.stringify({student,courseId:lesson.id,courseVersion:lesson.version,lesson,practiceDate:dailyDate,sessionId,sessionStarted,matchStarted,clozeStarted,sequence,phase,ix,flipped,round,attempt,language,clozeOrder:clozeOrder.map(x=>x.id),matchState,clozeMethods,clozeErrors,clozeInput:phase===2?[...$('screen').querySelectorAll('[data-fill]')].map(x=>[x.dataset.fill,x.value]):[],completed}));return true;}catch(e){$('sync').textContent='本機進度儲存失敗，請確認瀏覽器未封鎖網站資料'}}
 function restoreSnapshot(snap){
  if(!snap||snap.student!==student||snap.courseId!==lesson.id||snap.courseVersion!==lesson.version||snap.practiceDate!==dailyDate||snap.sessionId!==sessionId)return false;
  sequence=snap.sequence||0;
  sessionStarted=snap.sessionStarted||Date.now();matchStarted=snap.matchStarted||0;clozeStarted=snap.clozeStarted||0;phase=snap.phase||0;ix=snap.ix||0;flipped=!!snap.flipped;round=snap.round||0;attempt=snap.attempt||0;language=snap.language||language;
  clozeOrder=(snap.clozeOrder||[]).map(id=>lesson.words.find(x=>x.id===id)).filter(Boolean);
- matchState=snap.matchState||null;completed=!!snap.completed;
+ clozeMethods=snap.clozeMethods||{};clozeErrors=snap.clozeErrors||{};matchState=snap.matchState||null;completed=!!snap.completed;
  $('workspace').classList.remove('hidden');$('courseTitle').textContent=lesson.title+'｜'+lesson.version;render();
  if(phase===2&&!completed){for(const [id,value] of (snap.clozeInput||[])){const input=$('screen').querySelector(`[data-fill="${id}"]`);if(input)input.value=value}saveSnapshot()}
  return true;
@@ -146,7 +147,7 @@ async function dailyStart(nextLesson,nextStudent,nextPin,nextLanguage){
    if(saveSnapshot())localStorage.setItem(reservation,JSON.stringify({sid:sessionId,pending:false}));
    $('sync').textContent='已恢復今天未完成的練習';flush();return;
   }
-  sequence=0;sessionStarted=Date.now();matchStarted=0;clozeStarted=0;phase=0;clozeOrder=[];matchState=null;matchAttempt=0;ix=0;flipped=false;round=0;attempt=0;answers={};completed=false;
+  sequence=0;sessionStarted=Date.now();matchStarted=0;clozeStarted=0;phase=0;clozeOrder=[];clozeMethods={};clozeErrors={};matchState=null;matchAttempt=0;ix=0;flipped=false;round=0;attempt=0;answers={};completed=false;
   $('workspace').classList.remove('hidden');$('courseTitle').textContent=lesson.title+'｜'+lesson.version;
   makeEvent('session_start',{wordCount:lesson.words.length});render();
   if(saveSnapshot())localStorage.setItem(reservation,JSON.stringify({sid:sessionId,pending:false}));
@@ -233,7 +234,7 @@ $('retry').onclick=()=>{const code=$('student').value.trim(),secret=$('pin').val
 $('start').onclick=()=>{const nextLesson=courses[+$('course').value],nextStudent=$('student').value.trim(),nextPin=$('pin').value,nextLanguage=$('language').value;
  if(!nextLesson)return alert('請選擇課程');if(!(nextLesson.availableLanguages||['en']).includes(nextLanguage))return alert('這一課尚未完成此語言的詞義');if(!preview&&(!nextStudent||!nextPin))return alert('請輸入學生代碼與 PIN');if(!nextLesson.words?.length)return alert('沒有可用生詞');
 
- if(preview){lesson=nextLesson;student=nextStudent||'PREVIEW';pin='';language=nextLanguage;sessionId=uuid();sessionStarted=Date.now();phase=Number($('previewStage').value);clozeOrder=[];matchState=null;round=phase===0?0:1;ix=0;flipped=false;completed=false;$('workspace').classList.remove('hidden');render();return;}
+ if(preview){lesson=nextLesson;student=nextStudent||'PREVIEW';pin='';language=nextLanguage;sessionId=uuid();sessionStarted=Date.now();phase=Number($('previewStage').value);clozeOrder=[];clozeMethods={};clozeErrors={};matchState=null;round=phase===0?0:1;ix=0;flipped=false;completed=false;$('workspace').classList.remove('hidden');render();return;}
  dailyStart(nextLesson,nextStudent,nextPin,nextLanguage);
 };
 function msg(t,type='hint'){$('notice').innerHTML=`<p class="${type}">${h(t)}</p>`}
@@ -247,6 +248,7 @@ function match(){
  const group=cached?cached.left.map(id=>lesson.words.find(x=>x.id===id)).filter(Boolean):shuffled(lesson.words);
  const right=cached?cached.right.map(id=>lesson.words.find(x=>x.id===id)).filter(Boolean):shuffled(group);
  const done=new Set(cached?.done||[]), attempts=new Map(cached?.attempts||[]), errorsByWord=new Map(cached?.errorsByWord||[]);
+ matchAttempt=[...attempts.values()].reduce((sum,count)=>sum+count,0);
  let chosen=null,errors=cached?.errors||0,chosenAt=0;
  function keepMatch(){matchState={courseId:lesson.id,left:group.map(x=>x.id),right:right.map(x=>x.id),done:[...done],attempts:[...attempts],errorsByWord:[...errorsByWord],errors};saveSnapshot()}
  if(!cached)keepMatch();
@@ -263,7 +265,7 @@ function match(){
  left.forEach((b,i)=>b.onclick=()=>{if(done.has(group[i].id))return;clear();chosen=i;chosenAt=Date.now();b.classList.add('selected');feedback('請選擇「'+group[i].word+'」的詞義')});
  rb.forEach((b,i)=>b.onclick=()=>{if(chosen===null||done.has(right[i].id))return;let x=group[chosen],y=right[i],correct=x.id===y.id;matchAttempt++;
   const n=(attempts.get(x.id)||0)+1;attempts.set(x.id,n);if(!correct)errorsByWord.set(x.id,(errorsByWord.get(x.id)||0)+1);
-  makeEvent('answer',{wordId:x.id,word:x.word,selected:meaning(y),selectedWordId:y.id,correct,questionType:'meaning_match',attempt:matchAttempt,wordAttempt:n,wordErrorCount:errorsByWord.get(x.id)||0,matchOrder:correct?done.size+1:null,remainingPairs:group.length-done.size,groupSize:group.length,elapsedMatchMs:Date.now()-matchStarted,selectionLatencyMs:Date.now()-chosenAt});
+  makeEvent('answer',{wordId:x.id,word:x.word,selected:meaning(y),selectedWordId:y.id,correct,questionType:'meaning_match',attempt:matchAttempt,wordAttempt:n,firstAttempt:n===1,wordErrorCount:errorsByWord.get(x.id)||0,matchOrder:correct?done.size+1:null,remainingPairs:group.length-done.size,groupSize:group.length,elapsedMatchMs:Date.now()-matchStarted,selectionLatencyMs:Date.now()-chosenAt});
   clear();if(correct){done.add(x.id);left[chosen].remove();b.remove();feedback('配對正確！',true)}else{errors++;left[chosen].classList.add('wrong');b.classList.add('wrong');feedback('配對錯誤，請再試一次。',false)}chosen=null;keepMatch();
   $('matchStatus').textContent=`已完成 ${done.size}／${group.length}｜錯誤 ${errors} 次`;$('matchProgress').style.width=100*done.size/group.length+'%';
   if(done.size===group.length){makeEvent('round_end',{correctCount:done.size,total:group.length,errorCount:errors,elapsedMatchMs:Date.now()-matchStarted});$('nextGroup').disabled=false;$('nextGroup').textContent='開始句子填空';feedback('全課配對完成！',true);$('nextGroup').focus()}});
@@ -273,7 +275,7 @@ const norm=v=>String(v||'').normalize('NFKC').replace(/[\s，。！？,.!?]/g,''
 function classifyCloze(prompt,answer,allWords){const accepted=[prompt.word,...(prompt.accepted||[])];const correct=accepted.some(v=>norm(v)===norm(answer));const actual=correct?allWords.find(w=>norm(w.word)===norm(answer)):null;return {correct,actualWordId:actual?actual.id:null,actualWord:actual?actual.word:null};}
 let clozeOrder=[];
 function cloze(){if(!clozeStarted)clozeStarted=Date.now();if(!clozeOrder.length)clozeOrder=shuffled(lesson.words);saveSnapshot();$('screen').innerHTML=`<h2>${testing?'延宕測驗':'無選項句子填空'}｜第 ${round||1} 輪</h2><p class="hint">直接打字或使用裝置鍵盤語音輸入。可按麥克風執行瀏覽器語音辨識（若支援）。</p>`+clozeOrder.map(x=>`<div class="item"><label>${h(x.sentence)}</label><div class="row"><div class="grow"><input data-fill="${h(x.id)}" autocomplete="off" placeholder="輸入生詞"></div><button class="secondary" data-mic="${h(x.id)}">🎤 語音</button></div><div class="small" data-inputmethod="${h(x.id)}">目前：打字／鍵盤輸入</div></div>`).join('')+`<button id="submitCloze">${testing?'送出正式測驗':'送出本輪填空'}</button>`;
- const methods={};$('screen').querySelectorAll('[data-mic]').forEach(btn=>btn.onclick=()=>{let id=btn.dataset.mic,R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R){msg('本瀏覽器不支援語音辨識，請改用打字。','bad');return}const screen=$('screen').querySelector('[data-fill="'+id+'"]');let rec=new R();rec.lang='zh-TW';rec.interimResults=false;rec.maxAlternatives=1;rec.onresult=e=>{if(!screen?.isConnected||dailySyncing)return;let t=e.results[0][0].transcript;$('screen').querySelector(`[data-fill="${id}"]`).value=t;methods[id]='speech';$('screen').querySelector(`[data-inputmethod="${id}"]`).textContent='語音辨識完成，請核對或修正文字';makeEvent('speech_transcript',{wordId:id,transcript:t});saveSnapshot()};rec.onerror=e=>{if(screen?.isConnected&&!dailySyncing)makeEvent('speech_error',{wordId:id,error:e.error})};rec.start()});
+ const methods=clozeMethods;$('screen').querySelectorAll('[data-mic]').forEach(btn=>btn.onclick=()=>{let id=btn.dataset.mic,R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R){msg('本瀏覽器不支援語音辨識，請改用打字。','bad');return}const screen=$('screen').querySelector('[data-fill="'+id+'"]');let rec=new R();rec.lang='zh-TW';rec.interimResults=false;rec.maxAlternatives=1;rec.onresult=e=>{if(!screen?.isConnected||dailySyncing)return;let t=e.results[0][0].transcript;$('screen').querySelector(`[data-fill="${id}"]`).value=t;methods[id]='speech';$('screen').querySelector(`[data-inputmethod="${id}"]`).textContent='語音辨識完成，請核對或修正文字';makeEvent('speech_transcript',{wordId:id,transcript:t});saveSnapshot()};rec.onerror=e=>{if(screen?.isConnected&&!dailySyncing)makeEvent('speech_error',{wordId:id,error:e.error})};rec.start()});
  $('screen').querySelectorAll('[data-fill]').forEach(inp=>inp.addEventListener('input',()=>{if(methods[inp.dataset.fill]==='speech')methods[inp.dataset.fill]='speech_edited';saveSnapshot()}));
  const submit=$('submitCloze');
  submit.onclick=async()=>{
@@ -300,10 +302,11 @@ function cloze(){if(!clozeStarted)clozeStarted=Date.now();if(!clozeOrder.length)
    const correct=grades?grades[word.id]:classifyCloze(word,value,lesson.words).correct;
    const actual=correct?lesson.words.find(w=>norm(w.word)===norm(value)):null;
    scores.push(correct);
+   if(!correct)clozeErrors[word.id]=(clozeErrors[word.id]||0)+1;
    makeEvent('answer',{wordId:word.id,word:word.word,selected:value,correct,
     actualWordId:actual?.id??null,actualWord:actual?.word??null,questionType:'context_cloze',submissionId,
     attempt:round||1,wordAttempt:round||1,firstAttempt:(round||1)===1,
-    elapsedClozeRoundMs:Date.now()-clozeStarted,inputMethod});
+    wordErrorCount:clozeErrors[word.id]||0,elapsedClozeRoundMs:Date.now()-clozeStarted,inputMethod});
   }
   const count=scores.filter(Boolean).length;
   makeEvent('round_end',{submissionId,correctCount:count,total:scores.length});
@@ -313,7 +316,7 @@ function cloze(){if(!clozeStarted)clozeStarted=Date.now();if(!clozeOrder.length)
   }else{
    msg(`本輪 ${count}/${scores.length}，尚未全對，請繼續練習。`,'bad');
    round++;saveSnapshot();
-   submit.textContent='重新填空';submit.onclick=()=>{clozeStarted=Date.now();cloze()};
+   submit.textContent='重新填空';submit.onclick=()=>{clozeStarted=Date.now();clozeMethods={};cloze()};
   }
  };
 }
