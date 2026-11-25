@@ -1,0 +1,48 @@
+{
+  "schema": "vocab-research-1",
+  "id": "IT_10267a87720d4de895f7c88dd4448eee",
+  "version": "v2",
+  "title": "合成測試教材",
+  "book": "合成測試冊",
+  "lesson": "合成測試課",
+  "appVersion": "0.3.11",
+  "backendProtocol": "supabase-v1",
+  "quizMode": "practice",
+  "availableAt": null,
+  "clozeGrading": "server",
+  "availableLanguages": [
+    "en",
+    "vi",
+    "id"
+  ],
+  "words": [
+    {
+      "id": "W33E3580C09",
+      "word": "甲",
+      "pinyin": "jiǎ",
+      "meaning": "",
+      "meanings": {
+        "en": "alpha",
+        "vi": "a",
+        "id": "alfa"
+      },
+      "sentence": "這是＿＿個例子。",
+      "category": "textbook",
+      "source": "對話1"
+    },
+    {
+      "id": "W71530D4C49",
+      "word": "乙",
+      "pinyin": "yǐ",
+      "meaning": "",
+      "meanings": {
+        "en": "beta",
+        "vi": "b",
+        "id": "beta"
+      },
+      "sentence": "請選擇第＿＿項。",
+      "category": "textbook",
+      "source": "對話1"
+    }
+  ]
+}
