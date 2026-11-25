@@ -1,0 +1,43 @@
+# Local workspace, teaching materials, and research outputs
+/git-dev/
+/drafts/
+/data/
+/private/
+/research/
+/research_logs/
+/exports/
+/_updates_backups/
+*.csv
+*_完整性檢核.json
+pending-events*.json
+*_GAS_PRIVATE*
+*.zip
+*.bak
+*.tmp
+/app_備份.py
+
+# Local GAS and credentials
+*.gs
+teacher_settings.json
+.env
+.env.*
+*.dpapi
+*.pem
+*.key
+*credentials*.json
+*student_pin*
+*student-pin*
+*github_token*
+
+# Python and editor files
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.streamlit/secrets.toml
+student/backend.json
+node_modules/
+/supabase/.temp/
+
+teacher_supabase_settings.json
+*_SUPABASE_PRIVATE*
